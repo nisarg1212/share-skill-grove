@@ -1,3 +1,12 @@
+Team Leader Name: Nisarg Bhatt
+Team Name: Team 2262
+Email: nisargbhatt48@gmail.com
+Phone: 9054450797
+Reviewer: Mahendiali Vijapura (mjvi)
+
+Problem Statement 1 : Skill Swap Platform
+
+
 
 # SkillGrove
 
@@ -5,7 +14,7 @@
 
 A community-driven skill-sharing platform where people can connect to exchange knowledge and abilities.
 
-## New Features ✨
+
 
 ### Enhanced Suggested Matches
 - **Smart Matching Algorithm**: Matches users based on complementary skills, location, and interests
