@@ -23,7 +23,7 @@ interface Message {
   content: string;
   created_at: string;
   read: boolean;
-  profiles: {
+  sender_profile: {
     username: string;
   };
 }
@@ -89,7 +89,7 @@ const Dashboard = () => {
           content,
           created_at,
           read,
-          profiles!messages_sender_id_fkey(username)
+          sender_profile:profiles!messages_sender_id_fkey(username)
         `)
         .eq('receiver_id', user.id)
         .order('created_at', { ascending: false })
@@ -273,7 +273,7 @@ const Dashboard = () => {
                     <div key={message.id} className="p-3 bg-white rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-sm text-gray-900">
-                          {message.profiles?.username || 'Unknown User'}
+                          {message.sender_profile?.username || 'Unknown User'}
                         </span>
                         <span className="text-xs text-gray-500">
                           {formatTime(message.created_at)}
