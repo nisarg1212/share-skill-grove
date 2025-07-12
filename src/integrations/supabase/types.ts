@@ -14,7 +14,147 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      conversations: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_message_at: string | null
+          user1_id: string | null
+          user2_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_message_at?: string | null
+          user1_id?: string | null
+          user2_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_message_at?: string | null
+          user1_id?: string | null
+          user2_id?: string | null
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          read: boolean | null
+          receiver_id: string | null
+          sender_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          id?: string
+          read?: boolean | null
+          receiver_id?: string | null
+          sender_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          read?: boolean | null
+          receiver_id?: string | null
+          sender_id?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          bio: string | null
+          created_at: string | null
+          email: string
+          id: string
+          location: string | null
+          skills_offered: string[] | null
+          skills_wanted: string[] | null
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          bio?: string | null
+          created_at?: string | null
+          email: string
+          id: string
+          location?: string | null
+          skills_offered?: string[] | null
+          skills_wanted?: string[] | null
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          bio?: string | null
+          created_at?: string | null
+          email?: string
+          id?: string
+          location?: string | null
+          skills_offered?: string[] | null
+          skills_wanted?: string[] | null
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+      skill_matches: {
+        Row: {
+          created_at: string | null
+          id: string
+          skill_offered: string
+          skill_wanted: string
+          status: string | null
+          user1_id: string | null
+          user2_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          skill_offered: string
+          skill_wanted: string
+          status?: string | null
+          user1_id?: string | null
+          user2_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          skill_offered?: string
+          skill_wanted?: string
+          status?: string | null
+          user1_id?: string | null
+          user2_id?: string | null
+        }
+        Relationships: []
+      }
+      skills: {
+        Row: {
+          category: string
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

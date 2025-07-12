@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mail, Lock, User, Chrome } from 'lucide-react';
-import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AuthModalProps {
   open: boolean;
@@ -14,6 +14,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal = ({ open, onClose }: AuthModalProps) => {
+  const { signIn, signUp, signInWithGoogle } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -30,23 +31,33 @@ export const AuthModal = ({ open, onClose }: AuthModalProps) => {
   };
 
   const handleEmailAuth = async (isSignUp: boolean) => {
+    if (isSignUp && formData.password !== formData.confirmPassword) {
+      return;
+    }
+
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    
+    try {
+      if (isSignUp) {
+        await signUp(formData.email, formData.password, formData.username);
+      } else {
+        const { error } = await signIn(formData.email, formData.password);
+        if (!error) {
+          onClose();
+        }
+      }
+    } finally {
       setIsLoading(false);
-      toast.success(`${isSignUp ? 'Account created' : 'Signed in'} successfully! Please connect to Supabase to enable authentication.`);
-      onClose();
-    }, 1000);
+    }
   };
 
   const handleGoogleAuth = async () => {
     setIsLoading(true);
-    // Simulate Google auth
-    setTimeout(() => {
+    try {
+      await signInWithGoogle();
+    } finally {
       setIsLoading(false);
-      toast.success('Google authentication ready! Please connect to Supabase to enable this feature.');
-      onClose();
-    }, 1000);
+    }
   };
 
   return (
@@ -190,6 +201,22 @@ export const AuthModal = ({ open, onClose }: AuthModalProps) => {
                     placeholder="••••••••"
                     className="pl-10"
                     value={formData.password}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    id="confirm-password"
+                    name="confirmPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    className="pl-10"
+                    value={formData.confirmPassword}
                     onChange={handleInputChange}
                   />
                 </div>
