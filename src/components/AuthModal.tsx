@@ -11,9 +11,11 @@ import { useAuth } from '@/contexts/AuthContext';
 interface AuthModalProps {
   open: boolean;
   onClose: () => void;
+  onAuthSuccess?: () => void;
+  searchQuery?: string;
 }
 
-export const AuthModal = ({ open, onClose }: AuthModalProps) => {
+export const AuthModal = ({ open, onClose, onAuthSuccess, searchQuery }: AuthModalProps) => {
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -39,11 +41,14 @@ export const AuthModal = ({ open, onClose }: AuthModalProps) => {
     
     try {
       if (isSignUp) {
-        await signUp(formData.email, formData.password, formData.username);
+        const { error } = await signUp(formData.email, formData.password, formData.username);
+        if (!error) {
+          onAuthSuccess?.();
+        }
       } else {
         const { error } = await signIn(formData.email, formData.password);
         if (!error) {
-          onClose();
+          onAuthSuccess?.();
         }
       }
     } finally {
@@ -54,7 +59,10 @@ export const AuthModal = ({ open, onClose }: AuthModalProps) => {
   const handleGoogleAuth = async () => {
     setIsLoading(true);
     try {
-      await signInWithGoogle();
+      const { error } = await signInWithGoogle();
+      if (!error) {
+        onAuthSuccess?.();
+      }
     } finally {
       setIsLoading(false);
     }
@@ -67,6 +75,11 @@ export const AuthModal = ({ open, onClose }: AuthModalProps) => {
           <DialogTitle className="text-center text-2xl font-bold bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
             Join SkillGrove
           </DialogTitle>
+          {searchQuery && (
+            <p className="text-center text-sm text-gray-600 mt-2">
+              Continue to search for "{searchQuery}"
+            </p>
+          )}
         </DialogHeader>
 
         <Tabs defaultValue="signin" className="w-full">

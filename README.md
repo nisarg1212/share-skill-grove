@@ -5,6 +5,24 @@
 
 A community-driven skill-sharing platform where people can connect to exchange knowledge and abilities.
 
+## New Features ✨
+
+### Enhanced Suggested Matches
+- **Smart Matching Algorithm**: Matches users based on complementary skills, location, and interests
+- **Beautiful Profile Cards**: Rich profile displays with avatars, skills, ratings, and match percentages
+- **Filtering & Pagination**: Filter matches by location and browse through paginated results
+- **Multiple Actions**: View profiles, send messages, or connect directly from match cards
+
+### Profile System
+- **Comprehensive Profiles**: Users can showcase their skills, bio, location, and expertise
+- **Skill Matching**: Advanced algorithm that finds the best learning and teaching opportunities
+- **Rating System**: Visual ratings and skill compatibility percentages
+
+### Interactive Dashboard
+- **Modern UI**: Clean, responsive design with gradient backgrounds and smooth transitions
+- **Quick Actions**: Connect, message, or view profiles with one click
+- **Real-time Updates**: Live updates when new matches are found or connections are made
+
 ## How can I edit this code?
 
 There are several ways of editing your application.

@@ -1,14 +1,17 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Search, MessageSquare, User, Star, BookOpen, Users } from 'lucide-react';
 import { SearchResults } from '@/components/SearchResults';
+import { SuggestedMatches } from '@/components/SuggestedMatches';
+import { populateSampleProfiles } from '@/utils/populateProfiles';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 interface Profile {
   id: string;
@@ -29,52 +32,28 @@ interface Message {
 const Dashboard = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch suggested matches based on complementary skills
-  const { data: suggestedMatches } = useQuery({
-    queryKey: ['suggested-matches', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-
-      const { data: currentUser } = await supabase
-        .from('profiles')
-        .select('skills_offered, skills_wanted')
-        .eq('id', user.id)
-        .single();
-
-      if (!currentUser || !currentUser.skills_wanted) return [];
-
-      const { data: matches, error } = await supabase
-        .from('profiles')
-        .select('id, username, skills_offered, skills_wanted')
-        .neq('id', user.id)
-        .limit(5);
-
-      if (error) throw error;
-
-      // Filter for users who offer what current user wants
-      const filteredMatches = matches?.filter(match => {
-        const hasWantedSkill = match.skills_offered?.some(skill => 
-          currentUser.skills_wanted?.includes(skill)
-        );
-        const hasMutualInterest = match.skills_wanted?.some(skill =>
-          currentUser.skills_offered?.includes(skill)
-        );
-        return hasWantedSkill || hasMutualInterest;
-      }) || [];
-
-      return filteredMatches.map(match => ({
-        ...match,
-        rating: 4.8 + Math.random() * 0.2,
-        matches: Math.floor(Math.random() * 3) + 1
-      }));
-    },
-    enabled: !!user,
-  });
+  // Extract search query from URL parameters
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const searchParam = params.get('search');
+    if (searchParam) {
+      setSearchQuery(searchParam);
+      // Show a welcome message for homepage searchers
+      toast.success(`Welcome! Searching for "${searchParam}"...`);
+      // Clean up URL by removing search parameter
+      const newParams = new URLSearchParams(location.search);
+      newParams.delete('search');
+      const newUrl = `${location.pathname}${newParams.toString() ? `?${newParams.toString()}` : ''}`;
+      navigate(newUrl, { replace: true });
+    }
+  }, [location.search, navigate, location.pathname]);
 
   // Fetch recent messages with sender profile information
-  const { data: recentMessages } = useQuery({
+  const { data: recentMessages } = useQuery<Message[]>({
     queryKey: ['recent-messages', user?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -92,7 +71,7 @@ const Dashboard = () => {
 
       // Then get the sender profiles for these messages
       const senderIds = messages.map(msg => msg.sender_id).filter(Boolean);
-      if (senderIds.length === 0) return messages;
+      if (senderIds.length === 0) return messages as Message[];
 
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
@@ -102,7 +81,7 @@ const Dashboard = () => {
       if (profilesError) throw profilesError;
 
       // Combine messages with sender usernames
-      const messagesWithSenders = messages.map(message => ({
+      const messagesWithSenders: Message[] = messages.map(message => ({
         ...message,
         sender_username: profiles?.find(p => p.id === message.sender_id)?.username || 'Unknown User'
       }));
@@ -155,6 +134,17 @@ const Dashboard = () => {
     createConversationMutation.mutate(userId);
   };
 
+  const handlePopulateData = async () => {
+    try {
+      await populateSampleProfiles();
+      toast.success('Sample profiles added successfully!');
+      queryClient.invalidateQueries({ queryKey: ['enhanced-suggested-matches'] });
+    } catch (error) {
+      toast.error('Failed to populate sample data');
+      console.error('Error populating data:', error);
+    }
+  };
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -169,8 +159,19 @@ const Dashboard = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 p-6">
       <div className="max-w-7xl mx-auto">
         <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back!</h1>
-          <p className="text-gray-600">Ready to share skills and learn something new today?</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back!</h1>
+              <p className="text-gray-600">Ready to share skills and learn something new today?</p>
+            </div>
+            <Button
+              onClick={handlePopulateData}
+              variant="outline"
+              className="bg-gradient-to-r from-blue-50 to-green-50 hover:from-blue-100 hover:to-green-100 border-blue-200 text-sm"
+            >
+              Add Sample Profiles
+            </Button>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -182,6 +183,11 @@ const Dashboard = () => {
                 <CardTitle className="flex items-center">
                   <Search className="h-5 w-5 mr-2" />
                   Find Skills
+                  {searchQuery && (
+                    <span className="ml-2 text-sm font-normal text-blue-600">
+                      - Searching for "{searchQuery}"
+                    </span>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -192,56 +198,22 @@ const Dashboard = () => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
+                  {searchQuery && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setSearchQuery('')}
+                      className="text-sm"
+                    >
+                      Clear
+                    </Button>
+                  )}
                 </div>
                 <SearchResults query={searchQuery} onConnect={handleConnect} />
               </CardContent>
             </Card>
 
             {/* Suggested Matches */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Users className="h-5 w-5 mr-2" />
-                  Suggested Matches
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {suggestedMatches?.map((match) => (
-                    <div key={match.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-green-100 rounded-full flex items-center justify-center">
-                          <User className="h-6 w-6 text-blue-600" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-gray-900">{match.username}</h3>
-                          <p className="text-sm text-gray-600">
-                            Offers: {match.skills_offered?.join(", ") || "No skills listed"}
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            Wants: {match.skills_wanted?.join(", ") || "No skills listed"}
-                          </p>
-                          <div className="flex items-center mt-1">
-                            <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                            <span className="text-sm text-gray-600 ml-1">{match.rating?.toFixed(1)}</span>
-                            <span className="text-sm text-gray-500 ml-2">• {match.matches} mutual skills</span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button size="sm" onClick={() => handleConnect(match.id)}>
-                        Connect
-                      </Button>
-                    </div>
-                  ))}
-                  {(!suggestedMatches || suggestedMatches.length === 0) && (
-                    <div className="text-center text-gray-500 py-8">
-                      <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p>No suggested matches yet. Add skills to your profile to find connections!</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <SuggestedMatches onConnect={handleConnect} />
           </div>
 
           {/* Sidebar */}
