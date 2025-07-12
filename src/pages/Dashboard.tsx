@@ -23,9 +23,7 @@ interface Message {
   content: string;
   created_at: string;
   read: boolean;
-  sender_profile: {
-    username: string;
-  };
+  sender_username?: string;
 }
 
 const Dashboard = () => {
@@ -75,28 +73,41 @@ const Dashboard = () => {
     enabled: !!user,
   });
 
-  // Fetch recent messages
+  // Fetch recent messages with sender profile information
   const { data: recentMessages } = useQuery({
     queryKey: ['recent-messages', user?.id],
     queryFn: async () => {
       if (!user) return [];
 
-      const { data, error } = await supabase
+      // First get the messages
+      const { data: messages, error: messagesError } = await supabase
         .from('messages')
-        .select(`
-          id,
-          sender_id,
-          content,
-          created_at,
-          read,
-          sender_profile:profiles!messages_sender_id_fkey(username)
-        `)
+        .select('id, sender_id, content, created_at, read')
         .eq('receiver_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (error) throw error;
-      return data || [];
+      if (messagesError) throw messagesError;
+      if (!messages) return [];
+
+      // Then get the sender profiles for these messages
+      const senderIds = messages.map(msg => msg.sender_id).filter(Boolean);
+      if (senderIds.length === 0) return messages;
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', senderIds);
+
+      if (profilesError) throw profilesError;
+
+      // Combine messages with sender usernames
+      const messagesWithSenders = messages.map(message => ({
+        ...message,
+        sender_username: profiles?.find(p => p.id === message.sender_id)?.username || 'Unknown User'
+      }));
+
+      return messagesWithSenders;
     },
     enabled: !!user,
   });
@@ -273,7 +284,7 @@ const Dashboard = () => {
                     <div key={message.id} className="p-3 bg-white rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-sm text-gray-900">
-                          {message.sender_profile?.username || 'Unknown User'}
+                          {message.sender_username}
                         </span>
                         <span className="text-xs text-gray-500">
                           {formatTime(message.created_at)}
