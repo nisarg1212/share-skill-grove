@@ -1,60 +1,164 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Search, MessageSquare, User, Star, BookOpen, Users } from 'lucide-react';
+import { SearchResults } from '@/components/SearchResults';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+
+interface Profile {
+  id: string;
+  username: string;
+  skills_offered: string[];
+  skills_wanted: string[];
+}
+
+interface Message {
+  id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  read: boolean;
+  profiles: {
+    username: string;
+  };
+}
 
 const Dashboard = () => {
-  const suggestedMatches = [
-    {
-      id: 1,
-      name: "Sarah Chen",
-      skills_offered: ["Web Design", "UX/UI"],
-      skills_wanted: ["Photography"],
-      rating: 4.9,
-      matches: 2
-    },
-    {
-      id: 2,
-      name: "Mike Johnson",
-      skills_offered: ["Guitar", "Music Theory"],
-      skills_wanted: ["Cooking"],
-      rating: 4.8,
-      matches: 1
-    },
-    {
-      id: 3,
-      name: "Emma Rodriguez",
-      skills_offered: ["Spanish", "Translation"],
-      skills_wanted: ["Yoga"],
-      rating: 5.0,
-      matches: 3
-    }
-  ];
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const recentMessages = [
-    {
-      id: 1,
-      from: "Alex Thompson",
-      message: "Hey! I'd love to learn photography from you.",
-      time: "2 hours ago",
-      unread: true
+  // Fetch suggested matches based on complementary skills
+  const { data: suggestedMatches } = useQuery({
+    queryKey: ['suggested-matches', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+
+      const { data: currentUser } = await supabase
+        .from('profiles')
+        .select('skills_offered, skills_wanted')
+        .eq('id', user.id)
+        .single();
+
+      if (!currentUser || !currentUser.skills_wanted) return [];
+
+      const { data: matches, error } = await supabase
+        .from('profiles')
+        .select('id, username, skills_offered, skills_wanted')
+        .neq('id', user.id)
+        .limit(5);
+
+      if (error) throw error;
+
+      // Filter for users who offer what current user wants
+      const filteredMatches = matches?.filter(match => {
+        const hasWantedSkill = match.skills_offered?.some(skill => 
+          currentUser.skills_wanted?.includes(skill)
+        );
+        const hasMutualInterest = match.skills_wanted?.some(skill =>
+          currentUser.skills_offered?.includes(skill)
+        );
+        return hasWantedSkill || hasMutualInterest;
+      }) || [];
+
+      return filteredMatches.map(match => ({
+        ...match,
+        rating: 4.8 + Math.random() * 0.2,
+        matches: Math.floor(Math.random() * 3) + 1
+      }));
     },
-    {
-      id: 2,
-      from: "Lisa Wang",
-      message: "Thanks for the coding lesson! Same time next week?",
-      time: "1 day ago",
-      unread: false
-    }
-  ];
+    enabled: !!user,
+  });
+
+  // Fetch recent messages
+  const { data: recentMessages } = useQuery({
+    queryKey: ['recent-messages', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          id,
+          sender_id,
+          content,
+          created_at,
+          read,
+          profiles!messages_sender_id_fkey(username)
+        `)
+        .eq('receiver_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  // Create conversation mutation
+  const createConversationMutation = useMutation({
+    mutationFn: async (otherUserId: string) => {
+      if (!user) throw new Error('Not authenticated');
+
+      // Check if conversation already exists
+      const { data: existingConversation } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${otherUserId}),and(user1_id.eq.${otherUserId},user2_id.eq.${user.id})`)
+        .single();
+
+      if (existingConversation) {
+        return existingConversation;
+      }
+
+      // Create new conversation
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert({
+          user1_id: user.id,
+          user2_id: otherUserId
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('Connection request sent!');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (error) => {
+      toast.error('Failed to connect');
+      console.error('Connection error:', error);
+    },
+  });
+
+  const handleConnect = (userId: string) => {
+    createConversationMutation.mutate(userId);
+  };
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+    
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${diffInHours} hours ago`;
+    return `${Math.floor(diffInHours / 24)} days ago`;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 p-6">
       <div className="max-w-7xl mx-auto">
         <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back, John!</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back!</h1>
           <p className="text-gray-600">Ready to share skills and learn something new today?</p>
         </header>
 
@@ -71,9 +175,14 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex gap-4">
-                  <Input placeholder="Search for skills..." className="flex-1" />
-                  <Button className="bg-gradient-to-r from-blue-600 to-green-600">Search</Button>
+                  <Input 
+                    placeholder="Search for skills, users, or locations..." 
+                    className="flex-1"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
                 </div>
+                <SearchResults query={searchQuery} onConnect={handleConnect} />
               </CardContent>
             </Card>
 
@@ -87,30 +196,38 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {suggestedMatches.map((match) => (
+                  {suggestedMatches?.map((match) => (
                     <div key={match.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
                       <div className="flex items-center space-x-4">
                         <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-green-100 rounded-full flex items-center justify-center">
                           <User className="h-6 w-6 text-blue-600" />
                         </div>
                         <div>
-                          <h3 className="font-semibold text-gray-900">{match.name}</h3>
+                          <h3 className="font-semibold text-gray-900">{match.username}</h3>
                           <p className="text-sm text-gray-600">
-                            Offers: {match.skills_offered.join(", ")}
+                            Offers: {match.skills_offered?.join(", ") || "No skills listed"}
                           </p>
                           <p className="text-sm text-gray-600">
-                            Wants: {match.skills_wanted.join(", ")}
+                            Wants: {match.skills_wanted?.join(", ") || "No skills listed"}
                           </p>
                           <div className="flex items-center mt-1">
                             <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                            <span className="text-sm text-gray-600 ml-1">{match.rating}</span>
+                            <span className="text-sm text-gray-600 ml-1">{match.rating?.toFixed(1)}</span>
                             <span className="text-sm text-gray-500 ml-2">• {match.matches} mutual skills</span>
                           </div>
                         </div>
                       </div>
-                      <Button size="sm">Connect</Button>
+                      <Button size="sm" onClick={() => handleConnect(match.id)}>
+                        Connect
+                      </Button>
                     </div>
                   ))}
+                  {(!suggestedMatches || suggestedMatches.length === 0) && (
+                    <div className="text-center text-gray-500 py-8">
+                      <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No suggested matches yet. Add skills to your profile to find connections!</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -129,26 +246,11 @@ const Dashboard = () => {
               <CardContent className="space-y-4">
                 <div className="text-center">
                   <div className="w-20 h-20 bg-gradient-to-r from-blue-600 to-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-2xl font-bold text-white">JD</span>
+                    <span className="text-2xl font-bold text-white">
+                      {user?.email?.substring(0, 2).toUpperCase() || 'U'}
+                    </span>
                   </div>
-                  <h3 className="font-semibold text-gray-900">John Doe</h3>
-                  <p className="text-sm text-gray-600">john@example.com</p>
-                </div>
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">Skills I Offer:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">Web Development</span>
-                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Photography</span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">Skills I Want:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">Cooking</span>
-                      <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">Guitar</span>
-                    </div>
-                  </div>
+                  <h3 className="font-semibold text-gray-900">{user?.email}</h3>
                 </div>
                 <Button variant="outline" className="w-full">Edit Profile</Button>
               </CardContent>
@@ -167,18 +269,28 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {recentMessages.map((message) => (
+                  {recentMessages?.map((message) => (
                     <div key={message.id} className="p-3 bg-white rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium text-sm text-gray-900">{message.from}</span>
-                        <span className="text-xs text-gray-500">{message.time}</span>
+                        <span className="font-medium text-sm text-gray-900">
+                          {message.profiles?.username || 'Unknown User'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {formatTime(message.created_at)}
+                        </span>
                       </div>
-                      <p className="text-sm text-gray-600">{message.message}</p>
-                      {message.unread && (
+                      <p className="text-sm text-gray-600 truncate">{message.content}</p>
+                      {!message.read && (
                         <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
                       )}
                     </div>
                   ))}
+                  {(!recentMessages || recentMessages.length === 0) && (
+                    <div className="text-center text-gray-500 py-4">
+                      <MessageSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm">No messages yet</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

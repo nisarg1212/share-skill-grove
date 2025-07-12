@@ -1,102 +1,184 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Send, Search, MoreVertical, User, MessageSquare } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+
+interface Conversation {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  last_message_at: string;
+  otherUser: {
+    id: string;
+    username: string;
+    email: string;
+  };
+  lastMessage?: {
+    content: string;
+    created_at: string;
+  };
+}
+
+interface Message {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string;
+  read: boolean;
+}
 
 const Messages = () => {
-  const [selectedConversation, setSelectedConversation] = useState<number | null>(1);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const conversations = [
-    {
-      id: 1,
-      name: "Sarah Chen",
-      lastMessage: "Great! Looking forward to our photography session.",
-      timestamp: "2 hours ago",
-      unread: true,
-      avatar: "SC"
-    },
-    {
-      id: 2,
-      name: "Mike Johnson",
-      lastMessage: "Thanks for the guitar lesson tips!",
-      timestamp: "1 day ago",
-      unread: false,
-      avatar: "MJ"
-    },
-    {
-      id: 3,
-      name: "Emma Rodriguez",
-      lastMessage: "When would be a good time for Spanish practice?",
-      timestamp: "2 days ago",
-      unread: true,
-      avatar: "ER"
-    },
-    {
-      id: 4,
-      name: "Alex Thompson",
-      lastMessage: "The cooking class was amazing! Thank you.",
-      timestamp: "3 days ago",
-      unread: false,
-      avatar: "AT"
-    }
-  ];
+  // Fetch conversations
+  const { data: conversations, isLoading: conversationsLoading } = useQuery({
+    queryKey: ['conversations', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
 
-  const messages = [
-    {
-      id: 1,
-      senderId: 2,
-      senderName: "Sarah Chen",
-      content: "Hi John! I saw your profile and I'm really interested in learning web development from you.",
-      timestamp: "Yesterday, 2:30 PM",
-      isOwn: false
+      const { data, error } = await supabase
+        .from('conversations')
+        .select(`
+          id,
+          user1_id,
+          user2_id,
+          last_message_at,
+          created_at
+        `)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .order('last_message_at', { ascending: false, nullsFirst: false });
+
+      if (error) throw error;
+
+      // Get other user details for each conversation
+      const conversationsWithUsers = await Promise.all(
+        (data || []).map(async (conv) => {
+          const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+          
+          const { data: otherUser } = await supabase
+            .from('profiles')
+            .select('id, username, email')
+            .eq('id', otherUserId)
+            .single();
+
+          // Get last message
+          const { data: lastMessage } = await supabase
+            .from('messages')
+            .select('content, created_at')
+            .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          return {
+            ...conv,
+            otherUser: otherUser || { id: otherUserId, username: 'Unknown User', email: '' },
+            lastMessage
+          };
+        })
+      );
+
+      return conversationsWithUsers as Conversation[];
     },
-    {
-      id: 2,
-      senderId: 1,
-      senderName: "You",
-      content: "Hi Sarah! I'd be happy to help you with web development. I noticed you offer photography lessons - I've been wanting to improve my photography skills!",
-      timestamp: "Yesterday, 3:15 PM",
-      isOwn: true
+    enabled: !!user,
+  });
+
+  // Fetch messages for selected conversation
+  const { data: messages, isLoading: messagesLoading } = useQuery({
+    queryKey: ['messages', selectedConversation, user?.id],
+    queryFn: async () => {
+      if (!selectedConversation || !user) return [];
+
+      const selectedConv = conversations?.find(c => c.id === selectedConversation);
+      if (!selectedConv) return [];
+
+      const otherUserId = selectedConv.otherUser.id;
+
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
     },
-    {
-      id: 3,
-      senderId: 2,
-      senderName: "Sarah Chen",
-      content: "Perfect! That sounds like a great skill swap. I'm available on weekends. What works best for you?",
-      timestamp: "Yesterday, 4:20 PM",
-      isOwn: false
+    enabled: !!selectedConversation && !!user && !!conversations,
+  });
+
+  // Send message mutation
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ content, receiverId }: { content: string; receiverId: string }) => {
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          sender_id: user.id,
+          receiver_id: receiverId,
+          content: content.trim()
+        });
+
+      if (error) throw error;
+
+      // Update conversation timestamp
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', selectedConversation);
     },
-    {
-      id: 4,
-      senderId: 1,
-      senderName: "You",
-      content: "Weekends work great for me too! How about we start with a photography session this Saturday, and then we can do a web dev session next weekend?",
-      timestamp: "Today, 9:30 AM",
-      isOwn: true
+    onSuccess: () => {
+      setNewMessage('');
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversation] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
-    {
-      id: 5,
-      senderId: 2,
-      senderName: "Sarah Chen",
-      content: "Great! Looking forward to our photography session.",
-      timestamp: "Today, 10:15 AM",
-      isOwn: false
-    }
-  ];
+    onError: (error) => {
+      toast.error('Failed to send message');
+      console.error('Send message error:', error);
+    },
+  });
 
   const sendMessage = () => {
-    if (newMessage.trim()) {
-      // Simulate sending message
-      console.log('Sending message:', newMessage);
-      setNewMessage('');
-    }
+    if (!newMessage.trim() || !selectedConversation) return;
+
+    const selectedConv = conversations?.find(c => c.id === selectedConversation);
+    if (!selectedConv) return;
+
+    sendMessageMutation.mutate({
+      content: newMessage,
+      receiverId: selectedConv.otherUser.id
+    });
   };
 
-  const selectedConversationData = conversations.find(c => c.id === selectedConversation);
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+    
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    return `${Math.floor(diffInHours / 24)}d ago`;
+  };
+
+  const selectedConversationData = conversations?.find(c => c.id === selectedConversation);
+
+  const filteredConversations = conversations?.filter(conv =>
+    conv.otherUser.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    conv.lastMessage?.content.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 p-6">
@@ -114,46 +196,58 @@ const Messages = () => {
                 <CardTitle className="text-lg">Conversations</CardTitle>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <Input placeholder="Search messages..." className="pl-10" />
+                  <Input 
+                    placeholder="Search messages..." 
+                    className="pl-10" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
                 </div>
               </CardHeader>
               <CardContent className="p-0">
                 <ScrollArea className="h-[calc(100vh-320px)]">
-                  {conversations.map((conversation) => (
-                    <div
-                      key={conversation.id}
-                      onClick={() => setSelectedConversation(conversation.id)}
-                      className={`p-4 border-b border-gray-100 cursor-pointer transition-colors ${
-                        selectedConversation === conversation.id 
-                          ? 'bg-blue-50 border-l-4 border-l-blue-600' 
-                          : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
-                            {conversation.avatar}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-medium text-gray-900 truncate">
-                              {conversation.name}
-                            </h3>
-                            <span className="text-xs text-gray-500">
-                              {conversation.timestamp}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600 truncate mt-1">
-                            {conversation.lastMessage}
-                          </p>
-                        </div>
-                        {conversation.unread && (
-                          <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                        )}
-                      </div>
+                  {conversationsLoading ? (
+                    <div className="p-4 text-center">Loading conversations...</div>
+                  ) : filteredConversations.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500">
+                      <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p className="text-sm">No conversations yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Start connecting with people to begin messaging!</p>
                     </div>
-                  ))}
+                  ) : (
+                    filteredConversations.map((conversation) => (
+                      <div
+                        key={conversation.id}
+                        onClick={() => setSelectedConversation(conversation.id)}
+                        className={`p-4 border-b border-gray-100 cursor-pointer transition-colors ${
+                          selectedConversation === conversation.id 
+                            ? 'bg-blue-50 border-l-4 border-l-blue-600' 
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Avatar className="h-10 w-10">
+                            <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
+                              {conversation.otherUser.username.substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <h3 className="font-medium text-gray-900 truncate">
+                                {conversation.otherUser.username}
+                              </h3>
+                              <span className="text-xs text-gray-500">
+                                {conversation.lastMessage ? formatTime(conversation.lastMessage.created_at) : formatTime(conversation.last_message_at)}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 truncate mt-1">
+                              {conversation.lastMessage?.content || 'No messages yet'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </ScrollArea>
               </CardContent>
             </Card>
@@ -169,12 +263,12 @@ const Messages = () => {
                     <div className="flex items-center space-x-3">
                       <Avatar className="h-10 w-10">
                         <AvatarFallback className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
-                          {selectedConversationData.avatar}
+                          {selectedConversationData.otherUser.username.substring(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <h2 className="font-semibold text-gray-900">
-                          {selectedConversationData.name}
+                          {selectedConversationData.otherUser.username}
                         </h2>
                         <p className="text-sm text-green-600">Online</p>
                       </div>
@@ -188,27 +282,39 @@ const Messages = () => {
                 {/* Messages */}
                 <CardContent className="flex-1 p-0">
                   <ScrollArea className="h-[calc(100vh-380px)] p-4">
-                    <div className="space-y-4">
-                      {messages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                            message.isOwn
-                              ? 'bg-gradient-to-r from-blue-600 to-green-600 text-white'
-                              : 'bg-gray-100 text-gray-900'
-                          } rounded-lg px-4 py-3`}>
-                            <p className="text-sm">{message.content}</p>
-                            <p className={`text-xs mt-2 ${
-                              message.isOwn ? 'text-blue-100' : 'text-gray-500'
-                            }`}>
-                              {message.timestamp}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {messagesLoading ? (
+                      <div className="text-center">Loading messages...</div>
+                    ) : !messages || messages.length === 0 ? (
+                      <div className="text-center text-gray-500 py-8">
+                        <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                        <p>No messages yet. Start the conversation!</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {messages.map((message) => {
+                          const isOwn = message.sender_id === user?.id;
+                          return (
+                            <div
+                              key={message.id}
+                              className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                            >
+                              <div className={`max-w-xs lg:max-w-md xl:max-w-lg ${
+                                isOwn
+                                  ? 'bg-gradient-to-r from-blue-600 to-green-600 text-white'
+                                  : 'bg-gray-100 text-gray-900'
+                              } rounded-lg px-4 py-3`}>
+                                <p className="text-sm">{message.content}</p>
+                                <p className={`text-xs mt-2 ${
+                                  isOwn ? 'text-blue-100' : 'text-gray-500'
+                                }`}>
+                                  {formatTime(message.created_at)}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </ScrollArea>
                 </CardContent>
 
@@ -225,6 +331,7 @@ const Messages = () => {
                     <Button 
                       onClick={sendMessage}
                       className="bg-gradient-to-r from-blue-600 to-green-600"
+                      disabled={sendMessageMutation.isPending || !newMessage.trim()}
                     >
                       <Send className="h-4 w-4" />
                     </Button>
