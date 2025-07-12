@@ -1,22 +1,17 @@
-# Welcome to your Lovable project
+
+# SkillGrove
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/5f33ce7a-b77c-4e80-bd65-72ca8575b1c3
+A community-driven skill-sharing platform where people can connect to exchange knowledge and abilities.
 
 ## How can I edit this code?
 
 There are several ways of editing your application.
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/5f33ce7a-b77c-4e80-bd65-72ca8575b1c3) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
 **Use your preferred IDE**
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+If you want to work locally using your own IDE, you can clone this repo and push changes.
 
 The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
@@ -59,15 +54,19 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Supabase
 
-## How can I deploy this project?
+## Features
 
-Simply open [Lovable](https://lovable.dev/projects/5f33ce7a-b77c-4e80-bd65-72ca8575b1c3) and click on Share -> Publish.
+- User authentication
+- Skill matching and discovery
+- Real-time messaging
+- Profile management
+- Community connections
 
-## Can I connect a custom domain to my Lovable project?
+## Getting Started
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+1. Set up your Supabase project
+2. Configure environment variables
+3. Run the development server
+4. Start connecting and sharing skills!
